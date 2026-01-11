@@ -91,6 +91,9 @@ def check_system_requirements(
         print("1. Checking AutoGLM Helper APP...", end=" ")
         if check_helper_app(helper_url):
             print("✅ OK")
+            print("-" * 50)
+            print("✅ All system checks passed!\n")
+            return True
         else:
             print("❌ FAILED")
             print("   Error: AutoGLM Helper APP is not accessible.")
@@ -99,11 +102,9 @@ def check_system_requirements(
             print("     2. Enable accessibility service in Android settings")
             print(f"     3. Verify Helper APP is listening on {helper_url}")
             print("     4. Test connection: curl http://localhost:8080/status")
-            all_passed = False
             print("-" * 50)
-            if not all_passed:
-                print("❌ System check failed. Please fix the issues above.")
-            return all_passed
+            print("❌ System check failed. Please fix the issues above.")
+            return False
 
     # Continue with normal ADB/HDC/iOS checks if not using Helper APP
 
@@ -800,6 +801,10 @@ def main():
         and device_type == DeviceType.ADB
         and check_helper_app(args.helper_url)
     )
+    
+    # Debug: Print helper mode status (can be removed later)
+    if use_helper:
+        print(f"📱 Using AutoGLM Helper APP mode (URL: {args.helper_url})")
 
     # Run system requirements check before proceeding
     if not check_system_requirements(
