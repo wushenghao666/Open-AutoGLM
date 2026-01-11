@@ -34,21 +34,49 @@ from phone_agent.xctest import XCTestConnection
 from phone_agent.xctest import list_devices as list_ios_devices
 
 
+def check_helper_app(helper_url: str = "http://localhost:8080") -> bool:
+    """
+    Check if AutoGLM Helper APP is accessible.
+
+    Args:
+        helper_url: The Helper APP HTTP server URL.
+
+    Returns:
+        True if Helper APP is accessible, False otherwise.
+    """
+    import urllib.request
+    import urllib.error
+
+    try:
+        req = urllib.request.Request(f"{helper_url}/status", method="GET")
+        with urllib.request.urlopen(req, timeout=5) as response:
+            if response.status == 200:
+                return True
+    except (urllib.error.URLError, OSError, Exception):
+        pass
+    return False
+
+
 def check_system_requirements(
-    device_type: DeviceType = DeviceType.ADB, wda_url: str = "http://localhost:8100"
+    device_type: DeviceType = DeviceType.ADB,
+    wda_url: str = "http://localhost:8100",
+    use_helper: bool = False,
+    helper_url: str = "http://localhost:8080",
 ) -> bool:
     """
     Check system requirements before running the agent.
 
     Checks:
-    1. ADB/HDC/iOS tools installed
-    2. At least one device connected
-    3. ADB Keyboard installed on the device (for ADB only)
+    1. ADB/HDC/iOS tools installed (or Helper APP if use_helper=True)
+    2. At least one device connected (or Helper APP accessible)
+    3. ADB Keyboard installed on the device (for ADB only, skipped if use_helper)
     4. WebDriverAgent running (for iOS only)
 
     Args:
         device_type: Type of device tool (ADB, HDC, or IOS).
         wda_url: WebDriverAgent URL (for iOS only).
+        use_helper: If True, use AutoGLM Helper APP instead of ADB.
+        helper_url: Helper APP HTTP server URL.
 
     Returns:
         True if all checks pass, False otherwise.
@@ -57,6 +85,27 @@ def check_system_requirements(
     print("-" * 50)
 
     all_passed = True
+
+    # If using Helper APP, skip ADB checks
+    if use_helper:
+        print("1. Checking AutoGLM Helper APP...", end=" ")
+        if check_helper_app(helper_url):
+            print("✅ OK")
+        else:
+            print("❌ FAILED")
+            print("   Error: AutoGLM Helper APP is not accessible.")
+            print("   Solution:")
+            print("     1. Ensure AutoGLM Helper APP is installed and running")
+            print("     2. Enable accessibility service in Android settings")
+            print(f"     3. Verify Helper APP is listening on {helper_url}")
+            print("     4. Test connection: curl http://localhost:8080/status")
+            all_passed = False
+            print("-" * 50)
+            if not all_passed:
+                print("❌ System check failed. Please fix the issues above.")
+            return all_passed
+
+    # Continue with normal ADB/HDC/iOS checks if not using Helper APP
 
     # Determine tool name and command
     if device_type == DeviceType.IOS:
@@ -515,6 +564,19 @@ Examples:
     )
 
     parser.add_argument(
+        "--use-helper",
+        action="store_true",
+        help="Use AutoGLM Helper APP instead of ADB (for Termux environment)",
+    )
+
+    parser.add_argument(
+        "--helper-url",
+        type=str,
+        default=os.getenv("AUTOGLM_HELPER_URL", "http://localhost:8080"),
+        help="AutoGLM Helper APP HTTP server URL (default: http://localhost:8080)",
+    )
+
+    parser.add_argument(
         "task",
         nargs="?",
         type=str,
@@ -731,12 +793,22 @@ def main():
     if handle_device_commands(args):
         return
 
+    # Auto-detect Termux environment and use Helper APP if available
+    is_termux = os.path.exists("/data/data/com.termux")
+    use_helper = args.use_helper or (
+        is_termux
+        and device_type == DeviceType.ADB
+        and check_helper_app(args.helper_url)
+    )
+
     # Run system requirements check before proceeding
     if not check_system_requirements(
         device_type,
         wda_url=args.wda_url
         if device_type == DeviceType.IOS
         else "http://localhost:8100",
+        use_helper=use_helper,
+        helper_url=args.helper_url,
     ):
         sys.exit(1)
 
